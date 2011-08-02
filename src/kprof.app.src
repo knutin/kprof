@@ -1,0 +1,12 @@
+{application, kprof,
+ [
+  {description, "Knuts aggregating profiler"},
+  {vsn, "1"},
+  {registered, []},
+  {applications, [
+                  kernel,
+                  stdlib
+                 ]},
+  {mod, { kprof_app, []}},
+  {env, []}
+ ]}.
