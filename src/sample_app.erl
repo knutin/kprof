@@ -21,31 +21,36 @@ t() ->
                        {stats_dumper, {couchdb, []}}]).
                        
 
-r() ->
+r(Seed) ->
     spawn(fun() ->
-                  kprof:do_apply(?MODULE, webserver_handler, [])
+                  kprof:do_apply(?MODULE, webserver_handler, [Seed])
           end).
     
 
-webserver_handler() ->
+webserver_handler(Seed) ->
+    random:seed(Seed, Seed, Seed),
     http(foobar).
 
 
 http(_Req) ->
-    timer:sleep(5),
+    timer:sleep(2 + random()),
     database(),
     logging(),
     render_response().
 
 database() ->
-    timer:sleep(10),
+    timer:sleep(20 + random()),
     ok.
 
 logging() ->
-    timer:sleep(3),
+    timer:sleep(1 + random()),
     ok.
 
 render_response() ->
-    timer:sleep(50).
+    timer:sleep(10 + random()).
+
+random() ->
+    round(random:uniform() * 50).
+
     
     
