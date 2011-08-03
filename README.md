@@ -6,7 +6,7 @@ all the way through your code, even across processes.
 The trace is broken down into "tiers", so you can see exactly how much
 time is spent in the different layers of your system. The VM traces
 only these tiers, which makes the performance impact much lower. A
-full trace is also possible.
+full trace is also possible for exploring a request.
 
 kprof is lightweight and allows tracing thousands of requests per
 second. The results are aggregated on the fly, to save space and make
