@@ -53,3 +53,6 @@ pulled out of thin air) second is encountered, tracing is aborted.
  * count number of requests to the token server
  * should be able to specify tiers using match specs
  * stop tracing gc when a request is finished
+ * the couchapp must allow selecting call id, node
+ * sort by most time consuming, in the selected time period
+ * select time period, last 30 minutise, 60 minutes, 3 hours, etc
