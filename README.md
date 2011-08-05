@@ -51,8 +51,18 @@ pulled out of thin air) second is encountered, tracing is aborted.
  * full tracing of all calls in a seq trace (fabian), "slow calls" in rpm
  * run the aggregation externally to the node using {tracer, Port}
  * count number of requests to the token server
- * should be able to specify tiers using match specs
- * stop tracing gc when a request is finished
- * the couchapp must allow selecting call id, node
- * sort by most time consuming, in the selected time period
- * select time period, last 30 minutise, 60 minutes, 3 hours, etc
+ * the sample app should be composed of multiple processes at each layer
+ * use basho_bench to run the sample app, while profiling, make sure concurrency doesn't break the profiler
+ * plain text aggregated output, show tier totals, list most time consuming calls with tier breakdown:
+
+Sample output:
+                                http    database        templating
+-------------------------------------------------------------------
+Totals across all calls:        50 ms   20 ms           10 ms
+-------------------------------------------------------------------
+foobar                          70 ms   30 ms           10 ms
+quux                            120 ms  70 ms           10 ms
+
+## Couchapp TODO
+ * select specific node or all nodes
+ * select time period, last 30 minutise, 60 minutes, 3 hours, etc, use for all charts
