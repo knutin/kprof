@@ -113,7 +113,7 @@ cleanup() ->
 server_names() ->
     lists:map(fun (N) ->
                       list_to_atom("server_" ++ integer_to_list(N))
-              end, lists:seq(1, 50)).
+              end, lists:seq(1, 2)).
 
 random_server() ->
     R = trunc(random:uniform() * length(server_names())) + 1,
