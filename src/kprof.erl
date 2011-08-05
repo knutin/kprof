@@ -6,7 +6,7 @@
 
 -export([start/0, stop/0]).
 
--export([start_trace/1, stop_trace/0]).
+-export([start_trace/1, stop_trace/0, set_token/0, clear_token/0]).
 
 -export([do_apply/3,
          misultin_req_loop/2, handle_misultin_req/3]).
