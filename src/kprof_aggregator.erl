@@ -141,11 +141,11 @@ send_stats({pid, Pid}) ->
             ok
     end;
 
-send_stats({couchdb, _CouchdbOptions}) ->
+send_stats({couchdb, CouchdbOptions}) ->
     case get_tier_timings() of
         [] -> ok;
         Timings ->
-            kprof_couchdb:put_tier_timings(Timings)
+            kprof_couchdb:put_tier_timings(Timings, CouchdbOptions)
     end.
 
 

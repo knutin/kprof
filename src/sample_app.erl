@@ -1,7 +1,11 @@
+%% @author Knut Nesheim <knutin@gmail.com>
+%% @copyright 2011 Knut Nesheim
+%%
+%% @doc App for generating trace events for development of kprof
 -module(sample_app).
-
 -compile([export_all]).
 
+%% @doc: Starts tracing, dump to couchdb on localhost
 t() ->
     kprof:stop(),
     kprof:start(),
@@ -19,12 +23,18 @@ t() ->
                     (_)      -> undefined
                 end,
 
+    CouchdbOptions = [{hostname, "localhost"},
+                      {port, 5984},
+                      {dbname, "kprof_couchapp"},
+                      {username, []},
+                      {password, []}],
+
     kprof:start_trace([{tier_config, TierConfig},
                        {identity_f, IdentityF},
                        {print_calls, false},
-                       {stats_dumper, {couchdb, []}}]).
+                       {stats_dumper, {couchdb, CouchdbOptions}}]).
 
-
+%% @doc: Run N requests
 r() ->
     spawn(fun() ->
                   start_processes(),
