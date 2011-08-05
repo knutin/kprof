@@ -132,6 +132,15 @@ send_stats({file, Path}) ->
             ok
     end;
 
+send_stats({pid, Pid}) ->
+    case get_tier_timings() of
+        [] -> ok;
+        TierTimings ->
+            Data = {[{tier_timings, TierTimings}]},
+            Pid ! {kprof_aggregated_data, Data},
+            ok
+    end;
+
 send_stats({couchdb, _CouchdbOptions}) ->
     case get_tier_timings() of
         [] -> ok;
