@@ -182,7 +182,8 @@ handle_trace({trace_ts, Pid, What, _, _} = Trace, State)
         {ok, HandlerPid} ->
             HandlerPid ! Trace;
         error ->
-            error_logger:info_msg("gc: No handler for ~p~n", [Pid])
+            %%error_logger:info_msg("gc: No handler for ~p~n", [Pid]),
+            ok
     end,
     State.
 

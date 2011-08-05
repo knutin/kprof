@@ -51,6 +51,7 @@ pulled out of thin air) second is encountered, tracing is aborted.
  * full tracing of all calls in a seq trace (fabian), "slow calls" in rpm
  * run the aggregation externally to the node using {tracer, Port}
  * count number of requests to the token server
+ * trace garbage collection more meaningfully, send as separate call to aggregator?
  * the sample app should be composed of multiple processes at each layer
  * use basho_bench to run the sample app, while profiling, make sure concurrency doesn't break the profiler
  * plain text aggregated output, show tier totals, list most time consuming calls with tier breakdown:
