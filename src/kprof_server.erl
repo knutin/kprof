@@ -53,14 +53,14 @@ handle_call({start_trace, Options}, _From, State) ->
         {ok, _} ->
             {reply, {error, already_tracing}, State};
         error ->
-            TierConfig = get_required_option(tier_config, Options),
+            TierConfig  = get_required_option(tier_config, Options),
             IdentityF = get_option(identity_f, Options, fun (_) -> undefined end),
-            PrintCalls = get_option(print_calls, Options, false),
+            PrintCalls  = get_option(print_calls, Options, false),
             StatsDumper = get_option(stats_dumper, Options, false),
 
-            State1 = dict:store(tier_config, TierConfig, State),
-            State2 = dict:store(identity_f, IdentityF, State1),
-            State3 = dict:store(print_calls, PrintCalls, State2),
+            NewState = store([{tier_config, TierConfig},
+                              {identity_f, IdentityF},
+                              {print_calls, PrintCalls}], State),
 
             ok = kprof_aggregator:clear(),
             ok = kprof_aggregator:set_dumper(StatsDumper),
@@ -68,7 +68,7 @@ handle_call({start_trace, Options}, _From, State) ->
             ok = do_start_trace(),
             ok = kprof_token_server:enable(),
 
-            {reply, ok, State3}
+            {reply, ok, NewState}
     end;
 
 %% STOP TRACE
@@ -297,3 +297,9 @@ get_conf(Key, State) ->
         error ->
             throw({kprof, configuration_key_not_found, Key})
     end.
+
+
+store([], State) ->
+    State;
+store([{Key, Value} | Rest], State) ->
+    store(Rest, dict:store(Key, Value, State)).
