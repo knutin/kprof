@@ -89,12 +89,17 @@ above the identity might be the type of request, for example "create",
 "read", "update", "delete". In other words, you will be able to know
 how much time is spent in each layer for each type of request.
 
-The identity function should be a fun of arity 1. It will receive the module name, function name, and actual Example:
+The identity function should be a fun of arity 1. It will receive the
+module name, function name, and the actual arguments of the function
+call, it should return an atom or a string. The function *must* return
+'undefined' if it cannot identify the function. Example:
 
     fun ({requests, handle_request, [create, _]}) ->
             create;
         ({requests, handle_request, [update, _]}) ->
             update
+        (_) ->
+            undefined
         end
 
 ## Full trace
@@ -106,6 +111,16 @@ higher performance impact than tiered tracing.
 Aggregation for full tracing is not possible, as it is currently done
 per {Module, Function, Arity} not on the position of the call within
 the call trace. This might change in the future.
+
+## Asynchronicity
+
+When kprof is tracing a request there is at least one case where code
+executed outside the request may be (partially) traced. If any process
+along the way sends a message fire-and-forget style (ie. no blocking
+gen_server:call/2 or receive directly after), the code executed as
+caused by that message might be interleaved with code from the
+request. This may easily happen in full traces. A work-around is to
+trace only on tiers that makes sense.
 
 ## Code-reload
 

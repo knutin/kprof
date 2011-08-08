@@ -67,6 +67,7 @@ handle_call({start_trace, Options}, _From, State) ->
             ok = setup_trace_patterns(TierConfig),
             ok = do_start_trace(),
             ok = kprof_token_server:enable(),
+            put(call_messages, []),
 
             {reply, ok, NewState}
     end;
@@ -91,32 +92,22 @@ handle_cast(_Msg, State) ->
 handle_info(TraceMsg, State) when element(1, TraceMsg) =:= trace_ts ->
     {noreply, handle_trace(TraceMsg, State)};
 
+handle_info({trace_results, Requests}, State) ->
+    RequestF =
+        fun (Calls) ->
+                Identity = identity(Calls, get_conf(identity_f, State)),
+                ok = maybe_log_calls(Calls, get_conf(print_calls, State), Identity),
+                %%io:format("."),
 
-%% KPROF TRACER COMMUNCATION
-handle_info({trace_completed, Label, Pids}, State) ->
-    NewState = lists:foldl(fun (Pid, S) -> dict:erase({handler, Pid}, S) end,
-                           State, Pids),
-    {noreply, dict:erase({label, Label}, NewState)};
+                {ok, TierConfig} = dict:find(tier_config, State),
+                Timings = lists:map(fun ({MFA, _, _, ElapsedUs, _}) ->
+                                            {mfa2tier(MFA, TierConfig), ElapsedUs}
+                                    end, Calls),
 
+                kprof_aggregator:tier_timings(Timings, Identity)
+        end,
+    lists:foreach(RequestF, Requests),
 
-handle_info({trace_results, _Label, Calls}, State) ->
-    Identity = identity(Calls, get_conf(identity_f, State)),
-    ok = maybe_log_calls(Calls, get_conf(print_calls, State), Identity),
-
-    {ok, TierConfig} = dict:find(tier_config, State),
-%%     TierCalls = lists:filter(fun ({MFA, _, _, _, _}) ->
-%%                                      mfa2tier(MFA, TierConfig) =/= undefined
-%%                              end, Calls),
-
-%%     TierTimings = lists:map(fun ({MFA, _, _, ElapsedUs, _}) ->
-%%                                     {mfa2tier(MFA, TierConfig), ElapsedUs}
-%%                             end, TierCalls),
-
-    Timings = lists:map(fun ({MFA, _, _, ElapsedUs, _}) ->
-                                {mfa2tier(MFA, TierConfig), ElapsedUs}
-                        end, Calls),
-
-    kprof_aggregator:tier_timings(Timings, Identity),
     {noreply, State};
 
 handle_info({'DOWN', _, process, Pid, _Reason}, State) ->
@@ -142,51 +133,22 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-handle_trace({trace_ts, Pid, call, _, {_, Label, _, _, _}, _} = Trace,
-             State) ->
-    %% A call in a sequence, spawn a handler for this specific token
-    %% label. Any return_from in any of the processes seen for this
-    %% label is directed to this handler.
-    NewState = case dict:find({label, Label}, State) of
-                   {ok, HandlerPid} ->
-                       HandlerPid ! Trace,
-                       dict:store({handler, Pid}, HandlerPid, State);
-                   error ->
-                       Parent = self(),
-                       HandlerPid = spawn_link(fun() ->
-                                                  kprof_tracer:start(Parent, Label)
-                                          end),
-                       HandlerPid ! Trace,
-                       State1 = dict:store({label, Label}, HandlerPid, State),
-                       State2 = dict:store({handler, Pid}, HandlerPid, State1),
-                       State2
-               end,
-    
-    maybe_trace_gc(Pid, NewState);
 
-handle_trace({trace_ts, Pid, What, MFA, _, _} = Trace, State)
-  when What =:= return_from;
-       What =:= exception_from ->
-    case dict:find({handler, Pid}, State) of
-        {ok, HandlerPid} ->
-            HandlerPid ! Trace;
+handle_trace(Trace, State) ->
+    case dict:find(tracer, State) of
+        {ok, TracerPid} ->
+            TracerPid ! Trace,
+            State;
         error ->
-            error_logger:info_msg("return_from: No handler for ~w, ~p~n", [Pid, MFA])
-    end,
-    State;
+            Parent = self(),
+            TracerPid = spawn_link(fun() ->
+                                            kprof_tracer:start(Parent)
+                                   end),
+            register(kprof_tracer, TracerPid),
+            TracerPid ! Trace,
 
-handle_trace({trace_ts, Pid, What, _, _} = Trace, State)
-  when What =:= gc_start;
-       What =:= gc_end ->
-    case dict:find({handler, Pid}, State) of
-        {ok, HandlerPid} ->
-            HandlerPid ! Trace;
-        error ->
-            %%error_logger:info_msg("gc: No handler for ~p~n", [Pid]),
-            ok
-    end,
-    State.
-
+            dict:store(tracer, TracerPid, State)
+    end.
 
 mfa2tier(garbage_collection, _TC) ->
     garbage_collection;
