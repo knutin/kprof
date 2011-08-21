@@ -67,7 +67,6 @@ handle_call({start_trace, Options}, _From, State) ->
             ok = setup_trace_patterns(TierConfig),
             ok = do_start_trace(),
             ok = kprof_token_server:enable(),
-            put(call_messages, []),
 
             {reply, ok, NewState}
     end;
@@ -141,8 +140,9 @@ handle_trace(Trace, State) ->
             State;
         error ->
             Parent = self(),
+            {_, EntryPoint} = hd(get_conf(tier_config, State)),
             TracerPid = spawn_link(fun() ->
-                                            kprof_tracer:start(Parent)
+                                            kprof_tracer:start(Parent, EntryPoint)
                                    end),
             register(kprof_tracer, TracerPid),
             TracerPid ! Trace,

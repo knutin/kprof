@@ -8,59 +8,41 @@
 %% responsible for actually finding the request.
 -module(kprof_tracer).
 
--export([start/1]).
+-export([start/2]).
 
--export([loop/2, do_receive/1, take_request/1, make_calls/1, process_messages/1,
+-export([loop/3, do_receive/1, take_request/2, make_calls/1, process_messages/2,
          take_return/3]).
 
-
-start(Parent) ->
-    loop(Parent, []).
+-define(PROCESS_INTERVAL, 100).
 
 
-loop(Parent, Acc) ->
-    erlang:send_after(100, self(), process),
-    Acc1 = lists:reverse(do_receive(Acc)),
-    Start = now(),
-    A = case process_messages(Acc1) of
-            {[], NewAcc} ->
-                NewAcc;
-            {Requests, NewAcc} ->
-                End = now(),
-                io:format("Found ~p calls(~p messages) in ~p ms~n",
-                          [length(Requests),
-                           length(Acc1),
-                           timer:now_diff(End, Start) / 1000.0]),
-
-                Parent ! {trace_results, Requests},
-                NewAcc
-        end,
+start(Parent, EntryPoint) ->
+    erlang:send_after(?PROCESS_INTERVAL, self(), process),
+    loop(Parent, EntryPoint, []).
 
 
-    case A of
-        [] -> ok;
-        _ ->
-            io:format("AccLen: ~p~n", [length(A)]),
-            io:format("A: ~p~n", [A]),
-            ok
-    end,
+loop(Parent, EntryPoint, Acc) ->
+    Acc1 = do_receive(lists:reverse(Acc)),
+    {Requests, NewAcc} = process_messages(EntryPoint, Acc1),
+    Parent ! {trace_results, Requests},
 
-    ?MODULE:loop(Parent, lists:reverse(A)).
+    erlang:send_after(?PROCESS_INTERVAL, self(), process),
+    ?MODULE:loop(Parent, EntryPoint, NewAcc).
 
-process_messages(Messages) ->
-    process_messages(Messages, []).
+process_messages(EntryPoint, Messages) ->
+    process_messages(EntryPoint, Messages, []).
 
-process_messages(Messages, CallsAcc) ->
-    {Request, NewMessages} = take_request(Messages),
+process_messages(EntryPoint, Messages, CallsAcc) ->
+    {Request, NewMessages} = take_request(EntryPoint, Messages),
     case make_calls(Request) of
         [] ->
             {CallsAcc, NewMessages};
         Calls ->
-            process_messages(NewMessages, [Calls | CallsAcc])
+            process_messages(EntryPoint, NewMessages, [Calls | CallsAcc])
     end.
 
-take_request(L0) ->
-    case find_entry_point(L0) of
+take_request(EntryPoint, L0) ->
+    case find_entry_point(EntryPoint, L0) of
         {undefined, _} ->
             {[], L0};
         {Msg, L1} ->
@@ -106,15 +88,15 @@ take_request(Label, InitialMsg, InitialPid, InitialMFA, [Msg | Messages], L) ->
 
 
 
-find_entry_point(Messages) ->
-    find_entry_point(Messages, []).
+find_entry_point(EntryPoint, Messages) ->
+    find_entry_point(EntryPoint, Messages, []).
 
-find_entry_point([{trace_ts, _, call, {sample_app, handle_op, Args}, _, _} = Msg | Rest], L)
-  when length(Args) =:= 4 ->
+find_entry_point({M, F, A}, [{trace_ts, _, call, {M, F, Args}, _, _} = Msg | Rest], L)
+  when length(Args) =:= A ->
     {Msg, lists:reverse(L, Rest)};
-find_entry_point([Msg | Rest], L) ->
-    find_entry_point(Rest, [Msg | L]);
-find_entry_point([], L) ->
+find_entry_point(EntryPoint, [Msg | Rest], L) ->
+    find_entry_point(EntryPoint, Rest, [Msg | L]);
+find_entry_point(_EntryPoint, [], L) ->
     {undefined, lists:reverse(L)}.
 
 
@@ -172,7 +154,7 @@ make_calls([{trace_ts, _, What, _, _, _} | Messages], Calls, Depth)
 do_receive(Messages) ->
     receive
         process ->
-            Messages;
+            lists:reverse(Messages);
         TraceMsg when element(1, TraceMsg) =:= trace_ts ->
             ?MODULE:do_receive([TraceMsg | Messages])
     end.
