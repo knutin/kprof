@@ -177,16 +177,16 @@ identity([], _IdentityF) ->
 
 %% @doc: Starts tracing garbage collection for the given pid. The pid
 %% is monitored and if it dies, it is removed from our state.
-maybe_trace_gc(Pid, State) ->
-    case dict:find({gc_traced, Pid}, State) of
-        {ok, true} ->
-            State;
-        error ->
-            catch(erlang:trace(Pid, true,
-                               [call, timestamp, garbage_collection])),
-            erlang:monitor(process, Pid),
-            dict:store({gc_traced, Pid}, true, State)
-    end.
+%% maybe_trace_gc(Pid, State) ->
+%%     case dict:find({gc_traced, Pid}, State) of
+%%         {ok, true} ->
+%%             State;
+%%         error ->
+%%             catch(erlang:trace(Pid, true,
+%%                                [call, timestamp, garbage_collection])),
+%%             erlang:monitor(process, Pid),
+%%             dict:store({gc_traced, Pid}, true, State)
+%%     end.
 
 
 setup_trace_patterns([]) ->
