@@ -29,7 +29,7 @@ to get feedback on what could make the "product" more usable! Any form
 of ideas/suggestions/musings are very much welcome. I also welcome
 patches and pull requests.
 
-kprof is used by wooga (github.com/wooga, wooga.com), the second
+kprof is used by wooga (github.com/wooga, wooga.com), the third
 largest social games developer in the world.
 
 ## Usage
@@ -135,26 +135,51 @@ tracing if any received trace message is older than N microseconds and
 resume some time later.
 
 ## TODO
- * overload protection in kprof_server, pause tracing, look at timestamp of trace messages, may be no longer than N microseconds in the past, configurable, resume tracing N seconds later
- * sampling based on frequency, sample 10% of all calls, somehow include this info in the couchapp
- * full tracing of all calls in a seq trace (fabian), "slow calls" in rpm
- * run the aggregation externally to the node using {tracer, Port}
+
+### Must-haves
+
+ * correct request parser
+
+ * the same traced function must be allowed to be executed multiple
+   times within a request
+
+ * proper explanation of the project in one sentence
+
+ * overload protection in kprof_server, pause tracing, look at
+   timestamp of trace messages, may be no longer than N microseconds
+   in the past, configurable, resume tracing N seconds later, circuit
+   breaker
+
+ * sampling, either based on user input or frequency
+
+ * measure impact of tracing in sample app so everybody can reproduce
+   the same results
+
+### Nice-to-have
+
+ * easy way to enable/disable tracing without stopping/starting the
+   app, implement in the token server?
+
+ * output trace messages to port, scripts to start/stop a "kprof node"
+   where request processing and aggregation is done
+
+ * plain text output of aggregation
+
+ * github wiki pages detailing usage, design
+
+ * proper/quickcheck tests of the tracer
+
+### Wishlist
+
+ * include information about sampling in the couchapp
+
  * trace garbage collection more meaningfully, send as separate call to aggregator?
- * trace gc after a request completed, shows gc triggered by a particular request
- * use basho_bench to run the sample app, while profiling, make sure concurrency doesn't break the profiler
- * configurable reporting interval
- * option to disable tracing of arguments to lower trace impact
- * plain text aggregated output, show tier totals, list most time consuming calls with tier breakdown:
 
-
-Sample output:
-                                http    database        templating
--------------------------------------------------------------------
-Totals across all calls:        50 ms   20 ms           10 ms
--------------------------------------------------------------------
-foobar                          70 ms   30 ms           10 ms
-quux                            120 ms  70 ms           10 ms
+ * use basho_bench to run the sample app, while profiling, make sure
+   concurrency doesn't break the profiler
 
 ## Couchapp TODO
+
  * select specific node or all nodes
+
  * select time period, last 30 minutise, 60 minutes, 3 hours, etc, use for all charts
