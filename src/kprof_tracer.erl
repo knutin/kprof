@@ -17,16 +17,26 @@
 
 
 start(Parent, EntryPoint) ->
-    erlang:send_after(?PROCESS_INTERVAL, self(), process),
+    %%erlang:send_after(?PROCESS_INTERVAL, self(), process),
     loop(Parent, EntryPoint, []).
 
 
 loop(Parent, EntryPoint, Acc) ->
     Acc1 = do_receive(lists:reverse(Acc)),
+    case Acc1 of
+        [] -> ok;
+        _ -> error_logger:info_msg("Acc1: ~p~n", [Acc1])
+    end,
     {Requests, NewAcc} = process_messages(EntryPoint, Acc1),
     Parent ! {trace_results, Requests},
+    case Requests of
+        [] -> ok;
+        _ ->
+            %%error_logger:info_msg("Requests: ~p~n", [Requests]),
+            ok
+    end,
 
-    erlang:send_after(?PROCESS_INTERVAL, self(), process),
+    %%erlang:send_after(?PROCESS_INTERVAL, self(), process),
     ?MODULE:loop(Parent, EntryPoint, NewAcc).
 
 process_messages(EntryPoint, Messages) ->
@@ -41,63 +51,58 @@ process_messages(EntryPoint, Messages, CallsAcc) ->
             process_messages(EntryPoint, NewMessages, [Calls | CallsAcc])
     end.
 
+%% @doc: If a full request exists, that is the entry point is called
+%% and returned from, all trace messages in this request is returned
+%% together with a new list of messages where the trace messages of
+%% the request has been removed. It is somewhat complex in order to
+%% only traverse the (potentially very big) list of trace messages
+%% only once for every request.
 take_request(EntryPoint, L0) ->
-    case find_entry_point(EntryPoint, L0) of
-        {undefined, _} ->
+    case take_entry_point(EntryPoint, L0) of
+        undefined ->
             {[], L0};
-        {Msg, L1} ->
-            {trace_ts, Pid, call, {M, F, Args}, {_, Label, _, _, _}, _} = Msg,
-            A = length(Args),
-
-            case take_request(Label, Msg, Pid, {M, F, A}, L1) of
-                {[], _} ->
-                    %% Entry point has not yet returned, wait for more calls
-                    {[], L0};
-                {Request, L2} ->
-                    case lists:last(Request) of
-                        {trace_ts, Pid, return_from, {M, F, A}, _, _} ->
-                            {Request, L2};
-                        _ ->
-                            {[], L0}
-                    end
-            end
+        {Entry, L1} ->
+            {trace_ts, Pid, call, {M, F, Args}, {_, Label, _, _, _}, _} = Entry,
+            Stack = [{Label, Pid, {M, F, length(Args)}}],
+            {Request, L2} = do_take_request(Stack, L1),
+            {[Entry | Request], L2}
     end.
-                
 
-take_request(Label, InitialMsg, InitialPid, InitialMFA, Messages) ->
-    take_request(Label, InitialMsg, InitialPid, InitialMFA, Messages, []).
+do_take_request(Stack, L) ->
+    do_take_request(Stack, [], [], L).
 
-take_request(_Label, _InitialMsg, _InitialPid, _InitialMFA, [], L) ->
-    {[], lists:reverse(L)};
+do_take_request([], ResultAcc, MessageAcc, L) ->
+    {lists:reverse(ResultAcc), lists:reverse(MessageAcc) ++ L};
 
-take_request(Label, InitialMsg, InitialPid, InitialMFA, [Msg | Messages], L) ->
+do_take_request(Stack, _ResultAcc, _MessageAcc, []) when length(Stack) > 0 ->
+    throw({kprof, missing_return, Stack});
+
+do_take_request([{Label, Pid, MFA} | _] = Stack, ResultAcc, MessageAcc, [Msg | L]) ->
     case Msg of
-        {trace_ts, NewPid, call, {M, F, Args}, {_, Label, _, _, _}, _} ->
-            {Children, L1} = take_request(Label, Msg, NewPid, {M, F, length(Args)}, Messages, L),
-            {Return, L2} = take_request(Label, InitialMsg, InitialPid, InitialMFA, L1),
-
-            {[InitialMsg, Msg] ++ Children ++ Return, L2};
-
-        {trace_ts, InitialPid, return_from, InitialMFA, _,  _} = ReturnMsg ->
-            {[ReturnMsg], lists:reverse(L, Messages)};
-        {trace_ts, InitialPid, exception_from, InitialMFA, _,  _} = ReturnMsg ->
-            {[ReturnMsg], lists:reverse(L, Messages)};
+        {trace_ts, NewPid, call, {M, F, Args}, {_, Label, _, _, _}, _} = Msg ->
+            do_take_request([{Label, NewPid, {M, F, length(Args)}} | Stack],
+                            [Msg | ResultAcc], MessageAcc, L);
+        {trace_ts, Pid, return_from, MFA, _, _} ->
+            do_take_request(tl(Stack), [Msg | ResultAcc], MessageAcc, L);
         _Other ->
-            take_request(Label, InitialMsg, InitialPid, InitialMFA, Messages, [Msg | L])
+            do_take_request(Stack, ResultAcc, [Msg | MessageAcc], L)
     end.
 
 
 
-find_entry_point(EntryPoint, Messages) ->
-    find_entry_point(EntryPoint, Messages, []).
 
-find_entry_point({M, F, A}, [{trace_ts, _, call, {M, F, Args}, _, _} = Msg | Rest], L)
+
+take_entry_point(EntryPoint, Messages) ->
+    take_entry_point(EntryPoint, Messages, []).
+
+take_entry_point({M, F, A}, [{trace_ts, _, call, {M, F, Args}, _, _} = Msg | Rest], L)
   when length(Args) =:= A ->
     {Msg, lists:reverse(L, Rest)};
-find_entry_point(EntryPoint, [Msg | Rest], L) ->
-    find_entry_point(EntryPoint, Rest, [Msg | L]);
-find_entry_point(_EntryPoint, [], L) ->
-    {undefined, lists:reverse(L)}.
+take_entry_point(EntryPoint, [Msg | Rest], L) ->
+    take_entry_point(EntryPoint, Rest, [Msg | L]);
+take_entry_point(_EntryPoint, [], _L) ->
+    undefined.
+
 
 
 %% @doc: Takes a list of trace messages(call, return_from,
@@ -174,6 +179,3 @@ take_return([{trace_ts, Pid, What, {M, F, A}, _, _} = Msg| Rest],
 
 take_return([Msg | Rest], Acc, Pid, MFA) ->
     take_return(Rest, [Msg | Acc], Pid, MFA).
-
-
-
