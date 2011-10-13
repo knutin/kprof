@@ -7,6 +7,7 @@
 -export([start/0, stop/0]).
 
 -export([start_trace/1, stop_trace/0, set_token/0, clear_token/0]).
+-export([get_current_label/0, set_current_label/1]).
 
 -export([do_apply/3,
          misultin_req_loop/2, handle_misultin_req/3]).
@@ -45,6 +46,19 @@ handle_misultin_req(M, F, R) ->
     Res = M:F(R),
     ok = clear_token(),
     Res.
+
+get_current_label() ->
+    case seq_trace:get_token(label) of
+        {label, L} ->
+            L;
+        [] ->
+            []
+    end.
+
+set_current_label([]) ->
+    ok;
+set_current_label(Label) ->
+    seq_trace:set_token(label, Label).
 
 
 %%
