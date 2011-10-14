@@ -17,16 +17,16 @@
 
 
 start(Parent, EntryPoint) ->
-    %%erlang:send_after(?PROCESS_INTERVAL, self(), process),
+    erlang:send_after(?PROCESS_INTERVAL, self(), process),
     loop(Parent, EntryPoint, []).
 
 
 loop(Parent, EntryPoint, Acc) ->
     Acc1 = do_receive(lists:reverse(Acc)),
-    case Acc1 of
-        [] -> ok;
-        _ -> error_logger:info_msg("Acc1: ~p~n", [Acc1])
-    end,
+    %% case Acc1 of
+    %%     [] -> ok;
+    %%     _ -> error_logger:info_msg("Acc1: ~p~n", [Acc1])
+    %% end,
     {Requests, NewAcc} = process_messages(EntryPoint, Acc1),
     Parent ! {trace_results, Requests},
     case Requests of
@@ -36,19 +36,24 @@ loop(Parent, EntryPoint, Acc) ->
             ok
     end,
 
-    %%erlang:send_after(?PROCESS_INTERVAL, self(), process),
+    erlang:send_after(?PROCESS_INTERVAL, self(), process),
     ?MODULE:loop(Parent, EntryPoint, NewAcc).
 
 process_messages(EntryPoint, Messages) ->
     process_messages(EntryPoint, Messages, []).
 
 process_messages(EntryPoint, Messages, CallsAcc) ->
-    {Request, NewMessages} = take_request(EntryPoint, Messages),
-    case make_calls(Request) of
-        [] ->
-            {CallsAcc, NewMessages};
-        Calls ->
-            process_messages(EntryPoint, NewMessages, [Calls | CallsAcc])
+    try
+        {Request, NewMessages} = take_request(EntryPoint, Messages),
+        case make_calls(Request) of
+            [] ->
+                {CallsAcc, NewMessages};
+            Calls ->
+                process_messages(EntryPoint, NewMessages, [Calls | CallsAcc])
+        end
+    catch
+        throw:{kprof, missing_return, _} ->
+            {CallsAcc, Messages}
     end.
 
 %% @doc: If a full request exists, that is the entry point is called

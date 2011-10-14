@@ -53,14 +53,24 @@ handle_call({start_trace, Options}, _From, State) ->
         {ok, _} ->
             {reply, {error, already_tracing}, State};
         error ->
-            TierConfig  = get_required_option(tier_config, Options),
-            IdentityF = get_option(identity_f, Options, fun (_) -> undefined end),
-            PrintCalls  = get_option(print_calls, Options, false),
-            StatsDumper = get_option(stats_dumper, Options, false),
+            TierConfig        = get_required_option(tier_config, Options),
+            IdentityF         = get_option(identity_f, Options, fun (_) -> undefined end),
+            SlowCallThreshold = get_option(slow_call_threshold, Options, -1),
+            SlowCallCallback  = get_option(slow_call_callback, Options, fun (_) -> ok end),
+            StatsDumper       = get_option(stats_dumper, Options, false),
+
+            Parent = self(),
+            {_, EntryPoint} = hd(TierConfig),
+            TracerPid = spawn_link(fun() ->
+                                           register(kprof_tracer, self()),
+                                           kprof_tracer:start(Parent, EntryPoint)
+                                   end),
 
             NewState = store([{tier_config, TierConfig},
                               {identity_f, IdentityF},
-                              {print_calls, PrintCalls}], State),
+                              {slow_call_threshold, SlowCallThreshold},
+                              {slow_call_callback, SlowCallCallback},
+                              {tracer, TracerPid}], State),
 
             ok = kprof_aggregator:clear(),
             ok = kprof_aggregator:set_dumper(StatsDumper),
@@ -89,14 +99,22 @@ handle_cast(_Msg, State) ->
 
 %% HANDLE TRACE MESSAGES
 handle_info(TraceMsg, State) when element(1, TraceMsg) =:= trace_ts ->
-    {noreply, handle_trace(TraceMsg, State)};
+    TracerPid = dict:fetch(tracer, State),
+    TracerPid ! TraceMsg,
+    {noreply, State};
 
 handle_info({trace_results, Requests}, State) ->
     RequestF =
         fun (Calls) ->
                 Identity = identity(Calls, get_conf(identity_f, State)),
-                ok = maybe_log_calls(Calls, get_conf(print_calls, State), Identity),
-                %%io:format("."),
+                Threshold = get_conf(slow_call_threshold, State),
+                case hd(Calls) of
+                    {_, _, _, ElapsedUs, _} when ElapsedUs >= Threshold ->
+                        CallbackF = get_conf(slow_call_callback, State),
+                        CallbackF(Calls, Identity);
+                    _ ->
+                        ok
+                end,
 
                 {ok, TierConfig} = dict:find(tier_config, State),
                 Timings = lists:map(fun ({MFA, _, _, ElapsedUs, _}) ->
@@ -132,23 +150,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%% Internal functions
 %%%===================================================================
 
-
-handle_trace(Trace, State) ->
-    case dict:find(tracer, State) of
-        {ok, TracerPid} ->
-            TracerPid ! Trace,
-            State;
-        error ->
-            Parent = self(),
-            {_, EntryPoint} = hd(get_conf(tier_config, State)),
-            TracerPid = spawn_link(fun() ->
-                                            kprof_tracer:start(Parent, EntryPoint)
-                                   end),
-            register(kprof_tracer, TracerPid),
-            TracerPid ! Trace,
-
-            dict:store(tracer, TracerPid, State)
-    end.
 
 mfa2tier(garbage_collection, _TC) ->
     garbage_collection;
@@ -196,7 +197,7 @@ setup_trace_patterns([{_Tier, MFA} | Rest]) ->
                          [{'_',
                            [{is_seq_trace}],
                            [{message, {get_seq_token}},
-                            {exception_trace}]}],
+                            {return_trace}]}],
                          [local]),
     setup_trace_patterns(Rest).
 
@@ -208,7 +209,7 @@ disable_trace_patterns([{_Tier, MFA} | Rest]) ->
 
 
 do_start_trace() ->
-    erlang:trace(all, true, [call, timestamp]),
+    erlang:trace(all, true, [call, set_on_spawn, timestamp]),
     ok.
 
 do_stop_trace() ->
@@ -230,27 +231,6 @@ get_option(Key, Options, Default) ->
         {Key, Value} ->
             Value
     end.
-
-
-maybe_log_calls(_Calls, false, _Identity) ->
-    ok;
-maybe_log_calls(Calls, true, Identity) ->
-    CallsF =
-        fun ({garbage_collection, _, Stats, ElapsedUs, Depth}) ->
-                io_lib:format("~s~w: ~p us, heap collected: ~w~n",
-                              [lists:duplicate(Depth, "| "),
-                               garbage_collection,
-                               ElapsedUs, lists:keyfind(heap_diff, 1, Stats)]);
-            ({MFA, _Args, _RetVal, ElapsedUs, Depth}) ->
-                io_lib:format("~s~w: ~p us~n",
-                              [lists:duplicate(Depth, "| "),
-                               MFA,
-                               ElapsedUs])
-        end,
-
-    Header = io_lib:format("Identity: ~p~n", [Identity]),
-    CallsLines = [Header | lists:map(CallsF, Calls)],
-    error_logger:info_msg(lists:flatten(CallsLines)).
 
 get_conf(Key, State) ->
     case dict:find(Key, State) of

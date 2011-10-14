@@ -30,7 +30,7 @@ misultin_test() ->
                    {misultin_http,headers,3},
                    {misultin_http,read_post_body,2},
                    {misultin_http,call_mfa,2},
-                   {k_webserver,handle_http,1}],
+                   {webserver,handle_http,1}],
     ?assertEqual(ExpectedMFA, get_mfa(Call)).
 
 
@@ -219,7 +219,7 @@ misultin_req() ->
            {0,5000,1,MisultinPid,0},
            {1318,509232,188352}},
        {trace_ts,WorkerPid,call,
-           {k_webserver,handle_http,
+           {webserver,handle_http,
                [{misultin_req,
                     {req,port,http,
                         {127,0,0,1},
@@ -234,7 +234,7 @@ misultin_req() ->
            {0,5000,0,WorkerPid,0},
            {1318,509232,188400}},
        {trace_ts,WorkerPid,return_from,
-           {k_webserver,handle_http,1},
+           {webserver,handle_http,1},
            {response,200,
                [],
                <<"foo">>},

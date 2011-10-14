@@ -127,8 +127,16 @@ send_stats({file, Path}) ->
         [] -> ok;
         TierTimings ->
             Data = {[{tier_timings, TierTimings}]},
-            {ok, Json} = jiffy:encode(Data),
+            Json = jiffy:encode(Data),
             ok = file:write_file(Path, Json, [append]),
+            ok
+    end;
+
+send_stats({'fun', F}) ->
+    case get_tier_timings() of
+        [] -> ok;
+        Timings ->
+            F(Timings),
             ok
     end;
 

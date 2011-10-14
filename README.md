@@ -140,6 +140,8 @@ resume some time later.
 
  * correct request parser
 
+ * logging of slow calls
+
  * the same traced function must be allowed to be executed multiple
    times within a request
 
