@@ -21,14 +21,6 @@ start(Parent, EntryPoint) ->
     loop(Parent, EntryPoint, []).
 
 
-format_msgs(Ms) ->
-    S = lists:map(fun ({trace_ts, _, call, {M, F, Args}, _, _}) ->
-                          io_lib:format("call    ~p~n", [{M, F, length(Args)}]);
-                      ({trace_ts, _, return_from, MFA, _, _}) ->
-                          io_lib:format("return  ~p~n", [MFA])
-                  end, Ms),
-    error_logger:info_msg(S).
-
 loop(Parent, EntryPoint, Acc) ->
     Acc1 = do_receive(lists:reverse(Acc)),
     {Requests, NewAcc} = process_messages(EntryPoint, Acc1),
@@ -196,3 +188,12 @@ take_return([{trace_ts, Pid, What, {M, F, A}, _, _} = Msg| Rest],
 
 take_return([Msg | Rest], Acc, Pid, MFA) ->
     take_return(Rest, [Msg | Acc], Pid, MFA).
+
+%% format_msgs(Ms) ->
+%%     S = lists:map(fun ({trace_ts, _, call, {M, F, Args}, _, _}) ->
+%%                           io_lib:format("call    ~p~n", [{M, F, length(Args)}]);
+%%                       ({trace_ts, _, return_from, MFA, _, _}) ->
+%%                           io_lib:format("return  ~p~n", [MFA])
+%%                   end, Ms),
+%%     error_logger:info_msg(S).
+
