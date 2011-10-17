@@ -36,6 +36,14 @@ loop(Parent, EntryPoint, Acc) ->
             ok
     end,
 
+    case length(NewAcc) > 500 of
+        true ->
+            error_logger:info_msg("Overload protection stopping kprof~n"),
+            application:stop(kprof);
+        false -> ok
+    end,
+
+
     erlang:send_after(?PROCESS_INTERVAL, self(), process),
     ?MODULE:loop(Parent, EntryPoint, NewAcc).
 
