@@ -142,6 +142,8 @@ resume some time later.
 
  * logging of slow calls
 
+ * in kprof_tracer, throw away every trace message up until the first entry point message
+
  * the same traced function must be allowed to be executed multiple
    times within a request
 
