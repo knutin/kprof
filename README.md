@@ -159,6 +159,10 @@ resume some time later.
  * measure impact of tracing in sample app so everybody can reproduce
    the same results
 
+ * send trace messages to an external node: dbg:tracer(port,
+   dbg:trace_port(ip, PortNumber), dbg:trace_client(ip, {HostName,
+   PortNumber}, HandlerSpec).
+
 ### Nice-to-have
 
  * easy way to enable/disable tracing without stopping/starting the
