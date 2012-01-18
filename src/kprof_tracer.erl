@@ -24,10 +24,11 @@ start(Parent, EntryPoint) ->
 loop(Parent, EntryPoint, Acc) ->
     Acc1 = do_receive(lists:reverse(Acc)),
     {Requests, NewAcc} = process_messages(EntryPoint, Acc1),
-    Parent ! {trace_results, Requests},
+
     case Requests of
         [] -> ok;
         _ ->
+            Parent ! {trace_results, Requests},
             %%error_logger:info_msg("Requests: ~p~n", [Requests]),
             ok
     end,
