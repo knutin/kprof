@@ -8,41 +8,99 @@
 %% responsible for actually finding the request.
 -module(kprof_tracer).
 
--export([start/2]).
+-export([mk_tracer/2, trace_handler/2]).
 
--export([loop/3, do_receive/1, take_request/2, make_calls/1, process_messages/2,
-         take_return/3]).
-
--define(PROCESS_INTERVAL, 100).
+-record(state, {traces, returns, entrypoint, request_target}).
 
 
-start(Parent, EntryPoint) ->
-    erlang:send_after(?PROCESS_INTERVAL, self(), process),
-    loop(Parent, EntryPoint, []).
+mk_tracer(EntryPoint, RequestTarget) ->
+    S = #state{traces = dict:new(), returns = dict:new(),
+               request_target = RequestTarget, entrypoint = EntryPoint},
+    {fun ?MODULE:trace_handler/2, S}.
 
 
-loop(Parent, EntryPoint, Acc) ->
-    Acc1 = do_receive(lists:reverse(Acc)),
-    {Requests, NewAcc} = process_messages(EntryPoint, Acc1),
-
-    case Requests of
-        [] -> ok;
-        _ ->
-            Parent ! {trace_results, Requests},
-            %%error_logger:info_msg("Requests: ~p~n", [Requests]),
-            ok
-    end,
-
-    case length(NewAcc) > 500 of
+trace_handler(Msg, S) ->
+    case is_call(Msg) of
         true ->
-            error_logger:info_msg("Overload protection stopping kprof~n"),
-            application:stop(kprof);
-        false -> ok
-    end,
+            NewTraces = insert_msg(label(Msg), Msg, S#state.traces),
+            NewReturns = insert_return(mfa(Msg), label(Msg), S#state.returns),
+            S#state{traces = NewTraces, returns = NewReturns};
+        false ->
+            {Label, NewReturns} = fetch_erase(mfa(Msg), S#state.returns),
+            case is_entry_return(Msg, S#state.entrypoint) of
+                true ->
+                    {Msgs, NewTraces} = fetch_erase(Label, S#state.traces),
+                    S#state.request_target ! {trace, lists:reverse([Msg | Msgs])},
+                    S#state{returns = NewReturns, traces = NewTraces};
+                false ->
+                    NewTraces = insert_msg(Label, Msg, S#state.traces),
+                    S#state{returns = NewReturns, traces = NewTraces}
+            end
+    end.
 
 
-    erlang:send_after(?PROCESS_INTERVAL, self(), process),
-    ?MODULE:loop(Parent, EntryPoint, NewAcc).
+is_entry_return(Msg, EntryPoint) ->
+    mfa(Msg) =:= EntryPoint.
+
+insert_msg(Key, Val, D) ->
+    dict:update(Key, fun (OldVals) -> [Val|OldVals] end, [Val], D).
+
+
+insert_return(Key, Val, D) ->
+    dict:store(Key, Val, D).
+
+
+is_call({trace_ts, _, call, _, _, _}) -> true;
+is_call({trace_ts, _, return_from, _, _, _}) -> false;
+is_call(Msg) -> throw({unexpected_msg, Msg}).
+
+fetch_erase(Key, D) ->
+    Val = dict:fetch(Key, D),
+    {Val, dict:erase(Key, D)}.
+
+
+%% recv(Msg, EntryPoint, S) when element(3, Msg) =:= return_from andalso
+%%                               element(4, Msg) =:= EntryPoint ->
+%%     %%{Label, CallStack, Msgs} = dict:fetch(
+%%     {lists:reverse(dict:fetch(key(Msg), S)), dict:erase(key(Msg), S)};
+
+%% recv(Msg, EntryPoint, S) ->
+%%     NewState =
+%%         case is_entry(Msg, EntryPoint) of
+%%             true ->
+%%                 {label(Msg), [mfa(Msg)], [Msg]};
+%%             false ->
+%%                 {Label, Stack, Msgs} = dict:fetch(
+
+
+%%     {[],
+%%      dict:update(key(Msg), fun (OldMsgs) -> [Msg|OldMsgs] end,
+%%                  [Msg], S)}.
+
+
+is_entry({trace_ts, _, call, {M, F, Args}, _, _}, {M,F,A})
+  when length(Args) =:= A ->
+    true;
+is_entry(_, _) ->
+    false.
+
+mfa({trace_ts, _, call, {M, F, Args}, _, _}) -> {M, F, length(Args)};
+mfa({trace_ts, _, return_from, MFA, _, _}) -> MFA.
+
+label({trace_ts, _, call, _, {_, Label, _, _, _}, _}) -> Label.
+
+
+key({trace_ts, _, call, _, {_, Token, _, _, _}, _}) ->
+    {Token, '_'};
+key({trace_ts, _, return_from, MFA, _, _}) ->
+    {'_', MFA}.
+
+
+
+
+
+
+
 
 process_messages(EntryPoint, Messages) ->
     process_messages(EntryPoint, Messages, []).

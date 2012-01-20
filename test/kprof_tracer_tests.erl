@@ -2,57 +2,75 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
-simple_call_test() ->
-    {Calls, Acc} = kprof_tracer:take_request(entry_point(), simple_trace_messages()),
-    ?assertEqual([call, call, return_from, return_from], get_types(Calls)),
-    ?assertEqual([], Acc).
+-record(state, {traces, returns, entrypoint, request_target}).
 
-no_return_test() ->
-    ?assertThrow({kprof, missing_return, _},
-                 kprof_tracer:take_request(entry_point(), no_return_messages())).
+handler_test() ->
+    [M1, M2, M3, M4] = simple_trace_messages(),
 
-interleaved_test() ->
-    {[Calls], Acc} = kprof_tracer:process_messages(entry_point(), interleaved_trace_messages()),
-    ?assertEqual([{sample_app, handle_op, 4},
-                  {sample_app, storage_handle_op, 1}], get_mfa(Calls)),
-    ?assert(length(Acc) =:= 2).
+    {Tracer, S0} = kprof_tracer:mk_tracer(entry(), self()),
 
-split_test() ->
-    {_First, Second} = split_trace_messages(),
-    {Calls, _} = kprof_tracer:take_request(entry_point(), Second),
-    ?assertEqual([], Calls).
+    S1 = Tracer(M1, S0),
+    S2 = Tracer(M2, S1),
+    S3 = Tracer(M3, S2),
+    S4 = Tracer(M4, S3),
+
+    ?assertEqual(dict:new(), S4#state.traces),
+    ?assertEqual(dict:new(), S4#state.returns),
+    ?assertEqual(simple_trace_messages(), receive {trace, Msgs} -> Msgs end),
+
+    ok.
+
+%% simple_call_test() ->
+%%     {Calls, Acc} = kprof_tracer:take_request(entry_point(), simple_trace_messages()),
+%%     ?assertEqual([call, call, return_from, return_from], get_types(Calls)),
+%%     ?assertEqual([], Acc).
+
+%% no_return_test() ->
+%%     ?assertThrow({kprof, missing_return, _},
+%%                  kprof_tracer:take_request(entry_point(), no_return_messages())).
+
+%% interleaved_test() ->
+%%     {[Calls], Acc} = kprof_tracer:process_messages(entry_point(), interleaved_trace_messages()),
+%%     ?assertEqual([{sample_app, handle_op, 4},
+%%                   {sample_app, storage_handle_op, 1}], get_mfa(Calls)),
+%%     ?assert(length(Acc) =:= 2).
+
+%% split_test() ->
+%%     {_First, Second} = split_trace_messages(),
+%%     {Calls, _} = kprof_tracer:take_request(entry_point(), Second),
+%%     ?assertEqual([], Calls).
 
 
-misultin_test() ->
-    {[Call], _Acc} = kprof_tracer:process_messages({misultin_http, handle_data, 9},
-                                                   misultin_req()),
-    ExpectedMFA = [{misultin_http,handle_data,9},
-                   {misultin_http,headers,3},
-                   {misultin_http,read_post_body,2},
-                   {misultin_http,call_mfa,2},
-                   {webserver,handle_http,1}],
-    ?assertEqual(ExpectedMFA, get_mfa(Call)).
+%% misultin_test() ->
+%%     {[Call], _Acc} = kprof_tracer:process_messages({misultin_http, handle_data, 9},
+%%                                                    misultin_req()),
+%%     ExpectedMFA = [{misultin_http,handle_data,9},
+%%                    {misultin_http,headers,3},
+%%                    {misultin_http,read_post_body,2},
+%%                    {misultin_http,call_mfa,2},
+%%                    {webserver,handle_http,1}],
+%%     ?assertEqual(ExpectedMFA, get_mfa(Call)).
 
-misultin_socket_loop_test() ->
-    {[Call], _Acc} = kprof_tracer:process_messages({misultin_http, handle_data, 9},
-                                                   misultin_socket_loop()),
-    ExpectedMFA = [{misultin_http,handle_data,9},
-                   {misultin_http,headers,3},
-                   {misultin_http,read_post_body,2},
-                   {misultin_http,call_mfa,2},
-                   {misultin_http,socket_loop,4},
-                   {webserver,handle_http,1},
-                   {foo_module,call,2},
-                   {misultin_http,socket_loop,4}
-                  ],
-    ?assertEqual(ExpectedMFA, get_mfa(Call)).
+%% misultin_socket_loop_test() ->
+%%     {[Call], _Acc} = kprof_tracer:process_messages({misultin_http, handle_data, 9},
+%%                                                    misultin_socket_loop()),
+%%     ExpectedMFA = [{misultin_http,handle_data,9},
+%%                    {misultin_http,headers,3},
+%%                    {misultin_http,read_post_body,2},
+%%                    {misultin_http,call_mfa,2},
+%%                    {misultin_http,socket_loop,4},
+%%                    {webserver,handle_http,1},
+%%                    {foo_module,call,2},
+%%                    {misultin_http,socket_loop,4}
+%%                   ],
+%%     ?assertEqual(ExpectedMFA, get_mfa(Call)).
 
 
 %%
 %% HELPERS AND DATA
 %%
 
-entry_point() ->
+entry() ->
     {sample_app, handle_op, 4}.
 
 simple_trace_messages() ->
@@ -78,6 +96,7 @@ simple_trace_messages() ->
       {sample_app,handle_op,4},
       done,
       {1312,628093,393017}}].
+
 
 split_trace_messages() ->
     Client = client,

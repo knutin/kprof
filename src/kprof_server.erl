@@ -46,21 +46,23 @@ handle_call({start_trace, Options}, _From, State) ->
     SlowCallCallback  = get_option(slow_call_callback, Options,
                                            fun (_) -> ok end),
     StatsDumper       = get_option(stats_dumper, Options, false),
-    UserTracer        = get_option(user_tracer, Options, undefined),
+    RequestTarget     = get_option(request_target, Options, self()),
 
     NewState = store([{node, Node},
                       {tier_config, TierConfig},
                       {identity_f, IdentityF},
-                      {user_tracer, UserTracer},
                       {slow_call_threshold, SlowCallThreshold},
-                      {slow_call_callback, SlowCallCallback}], State),
+                      {slow_call_callback, SlowCallCallback},
+                      {request_target, RequestTarget}], State),
+
+    {_, EntryPoint} = hd(TierConfig),
 
     {ok, Pid} = start_target(Node),
 
     ok = kprof_target:enable_trace_patterns(Pid, tc2mfa(TierConfig)),
     ok = kprof_target:start_trace(Pid),
     ok = kprof_target:enable_token_server(Pid),
-    ok = start_tracer(UserTracer),
+    ok = start_tracer(EntryPoint, RequestTarget),
 
     ok = kprof_aggregator:clear(),
     ok = kprof_aggregator:set_dumper(StatsDumper),
@@ -146,15 +148,9 @@ start_target(Node) ->
     rpc:call(Node, kprof_target, start_link, []).
 
 
-start_tracer(UserTracer) ->
-    Tracer = case UserTracer of
-                 undefined -> self();
-                 _ -> UserTracer
-             end,
-
-    F = fun (end_of_trace, _P) -> ok;
-            (M, P)             -> P ! M, P end,
-    Pid = dbg:trace_client(ip, {"127.0.0.1", 4711}, {F, Tracer}),
+start_tracer(EntryPoint, RequestTarget) ->
+    {F, TracerState} = kprof_tracer:mk_tracer(EntryPoint, RequestTarget),
+    Pid = dbg:trace_client(ip, {"127.0.0.1", 4711}, {F, TracerState}),
     erlang:monitor(process, Pid),
     ok.
 
