@@ -8,7 +8,7 @@
 %% responsible for actually finding the request.
 -module(kprof_tracer).
 
--export([mk_tracer/2, trace_handler/2]).
+-export([mk_tracer/2, trace_handler/2, request2graph/1]).
 
 -export([pid/1]).
 
@@ -41,9 +41,6 @@ trace_handler(Msg, S) ->
     end.
 
 
-is_entry_return(Msg, EntryPoint) ->
-    mfa(Msg) =:= EntryPoint.
-
 insert_msg(Key, Val, D) ->
     dict:update(Key, fun (OldVals) -> [Val|OldVals] end, [Val], D).
 
@@ -52,57 +49,44 @@ insert_return(Key, Val, D) ->
     dict:store(Key, Val, D).
 
 
-ret_key(Msg) ->
-    {pid(Msg), mfa(Msg)}.
-
-pid({trace_ts, Pid, call, _, _, _})     -> Pid;
-pid({trace_ts, Pid, return_from, _, _, _}) -> Pid.
-
-is_call({trace_ts, _, call, _, _, _}) -> true;
-is_call({trace_ts, _, return_from, _, _, _}) -> false;
-is_call(Msg) -> throw({unexpected_msg, Msg}).
-
 fetch_erase(Key, D) ->
     Val = dict:fetch(Key, D),
     {Val, dict:erase(Key, D)}.
 
 
-%% recv(Msg, EntryPoint, S) when element(3, Msg) =:= return_from andalso
-%%                               element(4, Msg) =:= EntryPoint ->
-%%     %%{Label, CallStack, Msgs} = dict:fetch(
-%%     {lists:reverse(dict:fetch(key(Msg), S)), dict:erase(key(Msg), S)};
+ret_key(Msg) -> {pid(Msg), mfa(Msg)}.
 
-%% recv(Msg, EntryPoint, S) ->
-%%     NewState =
-%%         case is_entry(Msg, EntryPoint) of
-%%             true ->
-%%                 {label(Msg), [mfa(Msg)], [Msg]};
-%%             false ->
-%%                 {Label, Stack, Msgs} = dict:fetch(
+is_entry_return(Msg, EntryPoint) -> mfa(Msg) =:= EntryPoint.
 
+pid({trace_ts, Pid, call, _, _, _})        -> Pid;
+pid({trace_ts, Pid, return_from, _, _, _}) -> Pid.
 
-%%     {[],
-%%      dict:update(key(Msg), fun (OldMsgs) -> [Msg|OldMsgs] end,
-%%                  [Msg], S)}.
-
-
-is_entry({trace_ts, _, call, {M, F, Args}, _, _}, {M,F,A})
-  when length(Args) =:= A ->
-    true;
-is_entry(_, _) ->
-    false.
+is_call({trace_ts, _, call, _, _, _})        -> true;
+is_call({trace_ts, _, return_from, _, _, _}) -> false;
+is_call(Msg)                                 -> throw({unexpected_msg, Msg}).
 
 mfa({trace_ts, _, call, {M, F, Args}, _, _}) -> {M, F, length(Args)};
-mfa({trace_ts, _, return_from, MFA, _, _}) -> MFA.
+mfa({trace_ts, _, return_from, MFA, _, _})   -> MFA.
 
 label({trace_ts, _, call, _, {_, Label, _, _, _}, _}) -> Label.
 
+ts({trace_ts, _, call, _, _, Ts})        -> Ts;
+ts({trace_ts, _, return_from, _, _, Ts}) -> Ts.
 
-key({trace_ts, _, call, _, {_, Token, _, _, _}, _}) ->
-    {Token, '_'};
-key({trace_ts, _, return_from, MFA, _, _}) ->
-    {'_', MFA}.
+elapsed(Call, Return) -> timer:now_diff(ts(Return), ts(Call)).
 
+
+request2graph([]) ->
+    [];
+request2graph(Msgs) ->
+    [Call | Rest] = Msgs,
+    {Return, NewRest} = take_return(Call, Rest),
+    [{mfa(Call), elapsed(Call, Return), request2graph(NewRest)}].
+
+
+take_return(Call, Msgs) ->
+    {value, Return, NewMsgs} = lists:keytake(mfa(Call), 4, Msgs),
+    {Return, NewMsgs}.
 
 
 

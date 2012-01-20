@@ -51,10 +51,31 @@ misultin_test() ->
     {Tracer, S0} = kprof_tracer:mk_tracer({misultin_http, handle_data, 9}, self()),
     Msgs = misultin_req(),
     S1 = lists:foldl(Tracer, S0, Msgs),
-    Msgs = receive {trace, Ms} -> Ms end,
+    ?assertEqual(Msgs, receive {trace, Ms} -> Ms end),
     ?assertEqual(dict:new(), S1#state.traces),
-    ?assertEqual(dict:new(), S1#state.returns),
-    ?assert(true).
+    ?assertEqual(dict:new(), S1#state.returns).
+
+
+
+simple_graph_test() ->
+    ?assertMatch(
+       [{{sample_app, handle_op, 1}, _,
+         [{{sample_app, storage_handle_op, 1}, _, []}]
+         }],
+       kprof_tracer:request2graph(simple_trace_messages())).
+
+misultin_graph_test() ->
+    ?assertMatch(
+       [{{misultin_http, handle_data, 9}, _,
+         [{{misultin_http, headers, 3}, _,
+           [{{misultin_http, read_post_body, 2}, _,
+             [{{misultin_http, call_mfa, 2}, _,
+               [{{webserver, handle_http, 1}, _, []}]
+              }]
+            }]
+          }]
+        }],
+       kprof_tracer:request2graph(misultin_req())).
 
 
 %% misultin_socket_loop_test() ->
