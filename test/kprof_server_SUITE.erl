@@ -4,25 +4,31 @@
 -include_lib("test_server/include/test_server.hrl").
 
 all() ->
-    [trace_port].
+    [target_node].
 
-trace_port(_) ->
-    kprof:stop(), kprof:start(),
-    ?line {ok, Slave} = slave:start(list_to_atom(net_adm:localhost()), bar),
-
-    ?line true = rpc:call(Slave, code, add_path, ["/home/knutin/git/kprof/ebin"]),
-    rpc:call(Slave, code, ensure_loaded, [sample_app]),
-
-    ?line ok = kprof:start_trace([{tier_config, tier_config()},
-                                  {identity_f, identity_f()},
-                                  {node, Slave},
-                                  {request_target, self()}]),
-
+target_node(_) ->
+    Slave = setup_slave([{request_target, self()}]),
     rpc:call(Slave, sample_app, r, [1, 1]),
 
     ?line [{trace, TraceMsgs}] = flush(),
     ?line 4 = length(TraceMsgs),
     slave:stop(Slave).
+
+
+%%
+%% HELPERS
+%%
+
+setup_slave(TraceOptions) ->
+    kprof:stop(), kprof:start(),
+    ?line {ok, Slave} = slave:start(list_to_atom(net_adm:localhost()), bar),
+    ?line true = rpc:call(Slave, code, add_path, ["/home/knutin/git/kprof/ebin"]),
+    rpc:call(Slave, code, ensure_loaded, [sample_app]),
+
+    ?line ok = kprof:start_trace([{tier_config, tier_config()},
+                                  {identity_f, identity_f()},
+                                  {node, Slave} | TraceOptions]),
+    Slave.
 
 
 flush() ->
