@@ -10,6 +10,8 @@
 
 -export([mk_tracer/2, trace_handler/2]).
 
+-export([pid/1]).
+
 -record(state, {traces, returns, entrypoint, request_target}).
 
 
@@ -23,10 +25,10 @@ trace_handler(Msg, S) ->
     case is_call(Msg) of
         true ->
             NewTraces = insert_msg(label(Msg), Msg, S#state.traces),
-            NewReturns = insert_return(mfa(Msg), label(Msg), S#state.returns),
+            NewReturns = insert_return(ret_key(Msg), label(Msg), S#state.returns),
             S#state{traces = NewTraces, returns = NewReturns};
         false ->
-            {Label, NewReturns} = fetch_erase(mfa(Msg), S#state.returns),
+            {Label, NewReturns} = fetch_erase(ret_key(Msg), S#state.returns),
             case is_entry_return(Msg, S#state.entrypoint) of
                 true ->
                     {Msgs, NewTraces} = fetch_erase(Label, S#state.traces),
@@ -49,6 +51,12 @@ insert_msg(Key, Val, D) ->
 insert_return(Key, Val, D) ->
     dict:store(Key, Val, D).
 
+
+ret_key(Msg) ->
+    {pid(Msg), mfa(Msg)}.
+
+pid({trace_ts, Pid, call, _, _, _})     -> Pid;
+pid({trace_ts, Pid, return_from, _, _, _}) -> Pid.
 
 is_call({trace_ts, _, call, _, _, _}) -> true;
 is_call({trace_ts, _, return_from, _, _, _}) -> false;

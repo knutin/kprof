@@ -5,29 +5,48 @@
 -record(state, {traces, returns, entrypoint, request_target}).
 
 handler_test() ->
-    [M1, M2, M3, M4] = simple_trace_messages(),
-
     {Tracer, S0} = kprof_tracer:mk_tracer(entry(), self()),
+    Msgs = simple_trace_messages(),
+    S1 = lists:foldl(Tracer, S0, Msgs),
 
-    S1 = Tracer(M1, S0),
-    S2 = Tracer(M2, S1),
-    S3 = Tracer(M3, S2),
-    S4 = Tracer(M4, S3),
+    ?assertEqual(dict:new(), S1#state.traces),
+    ?assertEqual(dict:new(), S1#state.returns),
+    ?assertEqual(Msgs, receive {trace, Msgs} -> Msgs end).
 
-    ?assertEqual(dict:new(), S4#state.traces),
-    ?assertEqual(dict:new(), S4#state.returns),
-    ?assertEqual(simple_trace_messages(), receive {trace, Msgs} -> Msgs end),
-
-    ok.
-
-%% simple_call_test() ->
-%%     {Calls, Acc} = kprof_tracer:take_request(entry_point(), simple_trace_messages()),
-%%     ?assertEqual([call, call, return_from, return_from], get_types(Calls)),
-%%     ?assertEqual([], Acc).
 
 %% no_return_test() ->
 %%     ?assertThrow({kprof, missing_return, _},
 %%                  kprof_tracer:take_request(entry_point(), no_return_messages())).
+
+
+interleaved_test() ->
+    Msgs = [
+            call(client, {sample_app,handle_op,[get]}, 100),
+            call(client2, {sample_app,handle_op,[get]}, 101),
+            call(server, {sample_app,storage_handle_op,[get]}, 100),
+            call(server2, {sample_app,storage_handle_op,[get]}, 101),
+            return(server, {sample_app,storage_handle_op,1}),
+            return(server2, {sample_app,storage_handle_op,1}),
+            return(client2, {sample_app,handle_op,1}),
+            return(client, {sample_app,handle_op,1})
+           ],
+    Client = by_pids(Msgs, [client, server]),
+    Client2 = by_pids(Msgs, [client2, server2]),
+
+    {Tracer, S0} = kprof_tracer:mk_tracer(entry(), self()),
+    S1 = lists:foldl(Tracer, S0, Msgs),
+    ?assertEqual(dict:new(), S1#state.traces),
+    ?assertEqual(dict:new(), S1#state.returns),
+    ?assertEqual(Client2, receive {trace, Ms} -> Ms end),
+    ?assertEqual(Client, receive {trace, Ms} -> Ms end).
+
+
+by_pids(Ms, Pids) ->
+    lists:filter(
+      fun (M) ->
+              lists:any(fun (P) -> kprof_tracer:pid(M) =:= P end, Pids)
+      end, Ms).
+
 
 %% interleaved_test() ->
 %%     {[Calls], Acc} = kprof_tracer:process_messages(entry_point(), interleaved_trace_messages()),
@@ -71,31 +90,24 @@ handler_test() ->
 %%
 
 entry() ->
-    {sample_app, handle_op, 4}.
+    {sample_app, handle_op, 1}.
 
 simple_trace_messages() ->
     Client = client,
     Server = server,
+
     [
-     {trace_ts,Client,call,
-      {sample_app,handle_op,[Client,get,0,0]},
-      {0,5000,0,Client,0},
-      {1312,628093,391861}},
+     call(Client, {sample_app, handle_op, [get]}, 100),
+     call(Server, {sample_app, storage_handle_op, [get]}, 100),
+     return(Server, {sample_app, storage_handle_op, 1}),
+     return(Client, {sample_app, handle_op, 1})
+     ].
 
-     {trace_ts,Server,call,
-      {sample_app,storage_handle_op,[{Client,get,0,0}]},
-      {0,5000,1,Client,0},
-      {1312,628093,391900}},
+call(Pid, MFA, Label) ->
+    {trace_ts, Pid, call, MFA, {0, Label, 0, Pid, 0}, erlang:now()}.
 
-     {trace_ts,Server,return_from,
-      {sample_app,storage_handle_op,1},
-      ok,
-      {1312,628093,393007}},
-
-     {trace_ts,Client,return_from,
-      {sample_app,handle_op,4},
-      done,
-      {1312,628093,393017}}].
+return(Pid, MFA) ->
+    {trace_ts, Pid, return_from, MFA, ok, erlang:now()}.
 
 
 split_trace_messages() ->
