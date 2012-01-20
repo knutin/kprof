@@ -1,19 +1,8 @@
 %% @author Knut Nesheim <knutin@gmail.com>
 %% @copyright 2011 Knut Nesheim
 %%
-%% @doc Setup/teardown traces, handles trace messages
+%% @doc Manage trace configuration
 %%
-%% At present, there can only be one trace running at a time. There
-%% may however be multiple requests executing at the same time.
-%%
-%% Every sequence is handled by a kprof_tracer process. When a
-%% function is called and includes a trace label, that trace message
-%% is forwarded to the tracer. All function calls returning in that
-%% process is directed to the handler for the duration of the
-%% request. This assumes the process must finish executing the
-%% function before executing another function, which is not true when
-%% handling system messages, but it should be true for normal cases,
-%% even in a system under load.
 -module(kprof_server).
 -behaviour(gen_server).
 
@@ -49,43 +38,44 @@ init([]) ->
 
 %% START TRACE
 handle_call({start_trace, Options}, _From, State) ->
-    case dict:find(tier_config, State) of
-        {ok, _} ->
-            {reply, {error, already_tracing}, State};
-        error ->
-            TierConfig        = get_required_option(tier_config, Options),
-            IdentityF         = get_option(identity_f, Options, fun (_) -> undefined end),
-            SlowCallThreshold = get_option(slow_call_threshold, Options, -1),
-            SlowCallCallback  = get_option(slow_call_callback, Options, fun (_) -> ok end),
-            StatsDumper       = get_option(stats_dumper, Options, false),
+    Node              = get_required_option(node, Options),
+    TierConfig        = get_required_option(tier_config, Options),
+    IdentityF         = get_option(identity_f, Options,
+                                   fun (_) -> undefined end),
+    SlowCallThreshold = get_option(slow_call_threshold, Options, -1),
+    SlowCallCallback  = get_option(slow_call_callback, Options,
+                                           fun (_) -> ok end),
+    StatsDumper       = get_option(stats_dumper, Options, false),
+    UserTracer        = get_option(user_tracer, Options, undefined),
 
-            Parent = self(),
-            {_, EntryPoint} = hd(TierConfig),
-            TracerPid = spawn_link(fun() ->
-                                           register(kprof_tracer, self()),
-                                           kprof_tracer:start(Parent, EntryPoint)
-                                   end),
+    NewState = store([{node, Node},
+                      {tier_config, TierConfig},
+                      {identity_f, IdentityF},
+                      {user_tracer, UserTracer},
+                      {slow_call_threshold, SlowCallThreshold},
+                      {slow_call_callback, SlowCallCallback}], State),
 
-            NewState = store([{tier_config, TierConfig},
-                              {identity_f, IdentityF},
-                              {slow_call_threshold, SlowCallThreshold},
-                              {slow_call_callback, SlowCallCallback},
-                              {tracer, TracerPid}], State),
+    {ok, Pid} = start_target(Node),
 
-            ok = kprof_aggregator:clear(),
-            ok = kprof_aggregator:set_dumper(StatsDumper),
-            ok = setup_trace_patterns(TierConfig),
-            ok = do_start_trace(),
-            ok = kprof_token_server:enable(),
+    ok = kprof_target:enable_trace_patterns(Pid, tc2mfa(TierConfig)),
+    ok = kprof_target:start_trace(Pid),
+    ok = kprof_target:enable_token_server(Pid),
+    ok = start_tracer(UserTracer),
 
-            {reply, ok, NewState}
-    end;
+    ok = kprof_aggregator:clear(),
+    ok = kprof_aggregator:set_dumper(StatsDumper),
+
+    %%ok = kprof_token_server:enable(),
+
+    {reply, ok, NewState};
+
+
 
 %% STOP TRACE
 handle_call(stop_trace, _From, State) ->
-    {ok, TierConfig} = dict:find(tier_config, State),
-    ok = disable_trace_patterns(TierConfig),
-    ok = do_stop_trace(),
+    %%{ok, TierConfig} = dict:find(tier_config, State),
+    %% ok = disable_trace_patterns(TierConfig),
+    %% ok = do_stop_trace(),
     ok = kprof_token_server:disable(),
 
     State1 = dict:erase(tier_config, State),
@@ -99,8 +89,9 @@ handle_cast(_Msg, State) ->
 
 %% HANDLE TRACE MESSAGES
 handle_info(TraceMsg, State) when element(1, TraceMsg) =:= trace_ts ->
-    TracerPid = dict:fetch(tracer, State),
-    TracerPid ! TraceMsg,
+    error_logger:info_msg("got trace msg: ~p~n", [TraceMsg]),
+    %%TracerPid = dict:fetch(tracer, State),
+    %%TracerPid ! TraceMsg,
     {noreply, State};
 
 handle_info({trace_results, Requests}, State) ->
@@ -151,6 +142,23 @@ code_change(_OldVsn, State, _Extra) ->
 %%%===================================================================
 
 
+start_target(Node) ->
+    rpc:call(Node, kprof_target, start_link, []).
+
+
+start_tracer(UserTracer) ->
+    Tracer = case UserTracer of
+                 undefined -> self();
+                 _ -> UserTracer
+             end,
+
+    F = fun (end_of_trace, _P) -> ok;
+            (M, P)             -> P ! M, P end,
+    Pid = dbg:trace_client(ip, {"127.0.0.1", 4711}, {F, Tracer}),
+    erlang:monitor(process, Pid),
+    ok.
+
+
 mfa2tier(garbage_collection, _TC) ->
     garbage_collection;
 mfa2tier({M, F, A}, TC) when is_list(A) ->
@@ -189,33 +197,6 @@ identity([], _IdentityF) ->
 %%             dict:store({gc_traced, Pid}, true, State)
 %%     end.
 
-
-setup_trace_patterns([]) ->
-    ok;
-setup_trace_patterns([{_Tier, MFA} | Rest]) ->
-    erlang:trace_pattern(MFA,
-                         [{'_',
-                           [{is_seq_trace}],
-                           [{message, {get_seq_token}},
-                            {return_trace}]}],
-                         [local]),
-    setup_trace_patterns(Rest).
-
-disable_trace_patterns([]) ->
-    ok;
-disable_trace_patterns([{_Tier, MFA} | Rest]) ->
-    erlang:trace_pattern(MFA, false, [local]),
-    disable_trace_patterns(Rest).
-
-
-do_start_trace() ->
-    erlang:trace(all, true, [call, set_on_spawn, timestamp]),
-    ok.
-
-do_stop_trace() ->
-    erlang:trace(all, false, [call, timestamp]),
-    ok.
-
 get_required_option(Key, Options) ->
     case lists:keyfind(Key, 1, Options) of
         false ->
@@ -245,3 +226,6 @@ store([], State) ->
     State;
 store([{Key, Value} | Rest], State) ->
     store(Rest, dict:store(Key, Value, State)).
+
+tc2mfa(TierConfig) ->
+    lists:map(fun ({_, MFA}) -> MFA end, TierConfig).

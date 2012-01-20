@@ -22,31 +22,25 @@ t() ->
                     (_) -> undefined
                 end,
 
-    CouchdbOptions = [{hostname, "localhost"},
-                      {port, 5984},
-                      {dbname, "kprof_couchapp"},
-                      {username, []},
-                      {password, []}],
-
     kprof:start_trace([{tier_config, TierConfig},
                        {identity_f, IdentityF},
                        {print_calls, false},
-                       {stats_dumper, {couchdb, CouchdbOptions}}]).
+                       {stats_dumper, false}]).
 
 %% @doc: Set up, run N number of requests, teardown
 r(Requests, Clients) ->
     spawn(fun() ->
                   process_flag(trap_exit, true),
-                  io:format("Starting servers~n"),
+                  error_logger:info_msg("Starting servers~n"),
                   start_storage_processes(),
 
-                  io:format("Running~n"),
+                  error_logger:info_msg("Running~n"),
                   Start = now(),
 
                   run_loop(Requests, 0, 0, Clients, self()),
                   End = now(),
                   ElapsedUs = timer:now_diff(End, Start),
-                  io:format("Did ~p requests per second~n",
+                  error_logger:info_msg("Did ~p requests per second~n",
                             [trunc(Requests / (ElapsedUs / 1000 / 1000))])
 
                   %%io:format("Cleaning up~n"),
@@ -101,8 +95,6 @@ start_storage_processes() ->
                           undefined ->
                               spawn(fun() ->
                                             register(Name, self()),
-                                            io:format("register ~p, ~p~n",
-                                                      [Name, self()]),
                                             storage_loop()
                                     end);
                           _ ->
@@ -141,3 +133,10 @@ server_for(Key) ->
     Servers = server_names(),
     I = erlang:phash(Key, length(Servers)),
     lists:nth(I, Servers).
+
+run_foo() ->
+    kprof:do_apply(?MODULE, foo, []).
+
+
+foo() -> bar().
+bar() -> bar.

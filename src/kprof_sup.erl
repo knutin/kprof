@@ -25,8 +25,7 @@ start_link() ->
 init([]) ->
     Children = [
                 ?CHILD(kprof_server, worker),
-                ?CHILD(kprof_aggregator, worker),
-                ?CHILD(kprof_token_server, worker)
+                ?CHILD(kprof_aggregator, worker)
                ],
     {ok, { {one_for_one, 5, 10}, Children} }.
 

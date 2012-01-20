@@ -1,36 +1,32 @@
 # kprof
 
-kprof allows you to see in which layer of your Erlang application a
-request is spending time.
-
-Requests are traced from entry point all the way through your code
-until the request completes by returning to the entry point, it is
-even traced across processes.
-
-The trace is broken down into "tiers", so you can see exactly how much
-time is spent in the different layers of your system. Only these tiers
-are traced by the VM, which makes the performance impact much lower. A
-full trace is also possible for exploring a request.
+kprof allows you to measure time spent in interesting functions on the
+execution path of a request, even as it travels across processes.
 
 kprof is lightweight and allows tracing thousands of requests per
 second.
 
-The results from each requests are aggregated on the fly and written
-to a file or to couchdb once a minute. A provided CouchApp
-(kprof_couchapp) has views and a simple GUI for viewing the data.
-
-kprof is licensed under the MIT License. If you include it in your
-product or in general find it useful in any way, please let me know.
-
 ## Project state
 
-There are very few features apart from the most basic so I would love
-to get feedback on what could make the "product" more usable! Any form
-of ideas/suggestions/musings are very much welcome. I also welcome
+kprof is very much in the stuff-breaks-all-the-time stage. There are
+very few features apart from the most basic so I would love to get
+feedback on what could make the "product" more usable! Any form of
+ideas/suggestions/musings are very much welcome. I also welcome
 patches and pull requests.
 
 kprof is used by wooga (github.com/wooga, wooga.com), the third
 largest social games developer in the world.
+
+## How it works
+
+Using the built-in trace tools in Erlang, a request is marked with a
+"sequential trace token". This token is used to trace execution across
+processes.
+
+Trace messages are handled outside the target VM, for minimum
+impact. kprof thus needs to run inside a separate VM that is connected
+to the target node over the Erlang distribution, so kprof can manage
+the tracing.
 
 ## Usage
 
@@ -137,6 +133,9 @@ resume some time later.
 ## TODO
 
 ### Must-haves
+
+ * use the set_seq_token action function in matchbody instead of using
+   the token server
 
  * correct request parser
 
