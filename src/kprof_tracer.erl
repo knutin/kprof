@@ -80,8 +80,14 @@ request2graph([]) ->
     [];
 request2graph(Msgs) ->
     [Call | Rest] = Msgs,
-    {Return, NewRest} = take_return(Call, Rest),
-    [{mfa(Call), elapsed(Call, Return), request2graph(NewRest)}].
+
+    case is_call(hd(Rest)) of
+        true ->
+            {Return, NewRest} = take_return(Call, Rest),
+            [{mfa(Call), elapsed(Call, Return), request2graph(NewRest)}];
+        false ->
+            [{mfa(Call), elapsed(Call, hd(Rest)), []} | request2graph(tl(Rest))]
+    end.
 
 
 take_return(Call, Msgs) ->
@@ -90,12 +96,6 @@ take_return(Call, Msgs) ->
 
 
 
-
-
-
-
-%% process_messages(EntryPoint, Messages) ->
-%%     process_messages(EntryPoint, Messages, []).
 
 %% process_messages(EntryPoint, Messages, CallsAcc) ->
 %%     try

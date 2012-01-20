@@ -64,14 +64,33 @@ simple_graph_test() ->
          }],
        kprof_tracer:request2graph(simple_trace_messages())).
 
+sibling_graph_test() ->
+    Msgs = [
+            call(client, {sample_app,handle_op,[get]}, 100),
+            call(server, {sample_app,storage_handle_op,[get]}, 100),
+            return(server, {sample_app,storage_handle_op,1}),
+            call(server, {sample_app,second_call,[get]}, 100),
+            return(server, {sample_app,second_call,1}),
+            return(client, {sample_app,handle_op,1})
+           ],
+
+    ?assertMatch(
+       [{{sample_app, handle_op, 1}, _,
+         [
+          {{sample_app, storage_handle_op, 1}, _, []},
+          {{sample_app, second_call, 1}, _, []}
+         ]
+         }],
+       kprof_tracer:request2graph(Msgs)).
+
 misultin_graph_test() ->
     ?assertMatch(
        [{{misultin_http, handle_data, 9}, _,
          [{{misultin_http, headers, 3}, _,
-           [{{misultin_http, read_post_body, 2}, _,
-             [{{misultin_http, call_mfa, 2}, _,
+           [
+            {{misultin_http, read_post_body, 2}, _, []},
+            {{misultin_http, call_mfa, 2}, _,
                [{{webserver, handle_http, 1}, _, []}]
-              }]
             }]
           }]
         }],
