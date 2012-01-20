@@ -16,11 +16,11 @@ trace_port(_) ->
     ?line ok = kprof:start_trace([{tier_config, tier_config()},
                                   {identity_f, identity_f()},
                                   {node, Slave},
-                                  {user_tracer, self()}]),
+                                  {request_target, self()}]),
 
     rpc:call(Slave, sample_app, r, [1, 1]),
 
-    TraceMsgs = flush(),
+    ?line [{trace, TraceMsgs}] = flush(),
     ?line 4 = length(TraceMsgs),
     slave:stop(Slave).
 
