@@ -20,7 +20,8 @@ mk_tracer(EntryPoint, RequestTarget) ->
                request_target = RequestTarget, entrypoint = EntryPoint},
     {fun ?MODULE:trace_handler/2, S}.
 
-
+trace_handler(end_of_trace, S) ->
+    S;
 trace_handler(Msg, S) ->
     case is_call(Msg) of
         true ->
