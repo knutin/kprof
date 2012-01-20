@@ -47,28 +47,15 @@ by_pids(Ms, Pids) ->
               lists:any(fun (P) -> kprof_tracer:pid(M) =:= P end, Pids)
       end, Ms).
 
+misultin_test() ->
+    {Tracer, S0} = kprof_tracer:mk_tracer({misultin_http, handle_data, 9}, self()),
+    Msgs = misultin_req(),
+    S1 = lists:foldl(Tracer, S0, Msgs),
+    Msgs = receive {trace, Ms} -> Ms end,
+    ?assertEqual(dict:new(), S1#state.traces),
+    ?assertEqual(dict:new(), S1#state.returns),
+    ?assert(true).
 
-%% interleaved_test() ->
-%%     {[Calls], Acc} = kprof_tracer:process_messages(entry_point(), interleaved_trace_messages()),
-%%     ?assertEqual([{sample_app, handle_op, 4},
-%%                   {sample_app, storage_handle_op, 1}], get_mfa(Calls)),
-%%     ?assert(length(Acc) =:= 2).
-
-%% split_test() ->
-%%     {_First, Second} = split_trace_messages(),
-%%     {Calls, _} = kprof_tracer:take_request(entry_point(), Second),
-%%     ?assertEqual([], Calls).
-
-
-%% misultin_test() ->
-%%     {[Call], _Acc} = kprof_tracer:process_messages({misultin_http, handle_data, 9},
-%%                                                    misultin_req()),
-%%     ExpectedMFA = [{misultin_http,handle_data,9},
-%%                    {misultin_http,headers,3},
-%%                    {misultin_http,read_post_body,2},
-%%                    {misultin_http,call_mfa,2},
-%%                    {webserver,handle_http,1}],
-%%     ?assertEqual(ExpectedMFA, get_mfa(Call)).
 
 %% misultin_socket_loop_test() ->
 %%     {[Call], _Acc} = kprof_tracer:process_messages({misultin_http, handle_data, 9},
