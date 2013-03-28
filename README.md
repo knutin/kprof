@@ -1,5 +1,7 @@
 # kprof
 
+**Vaporware! It doesn't actually work!**
+
 kprof allows you to measure time spent in interesting functions on the
 execution path of a request, even as it travels across processes.
 
